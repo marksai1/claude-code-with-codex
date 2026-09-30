@@ -14,7 +14,24 @@ pub const ALLOWED_MODELS: &[&str] = &[
     "gpt-5.6-luna",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-luna",
 ];
+
+/// Any `gpt-*` id is forwarded to Codex, so models OpenAI ships after this
+/// release work without a proxy update. `ALLOWED_MODELS` only feeds listings.
+fn is_gpt_model(model: &str) -> bool {
+    model.starts_with("gpt-")
+}
+
+/// Leading version number of a `gpt-X.Y-...` id (e.g. 6.1 for `gpt-6.1-sol`).
+fn gpt_version(model: &str) -> Option<f64> {
+    let rest = model.strip_prefix("gpt-")?;
+    let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    num.trim_end_matches('.').parse().ok()
+}
 
 pub const MODEL_ALIASES: &[(&str, &str)] = &[
     ("haiku", "gpt-5.6-luna"),
@@ -107,7 +124,7 @@ impl std::fmt::Display for ModelNotAllowedError {
 }
 
 pub fn assert_allowed_model(model: &str) -> Result<(), ModelNotAllowedError> {
-    if ALLOWED_MODELS.contains(&model) {
+    if ALLOWED_MODELS.contains(&model) || is_gpt_model(model) {
         Ok(())
     } else {
         Err(ModelNotAllowedError {
@@ -117,7 +134,9 @@ pub fn assert_allowed_model(model: &str) -> Result<(), ModelNotAllowedError> {
 }
 
 pub fn uses_responses_lite(model: &str) -> bool {
-    matches!(model, "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra")
+    // GPT-5.6 and every later family use the Responses Lite lane (the Codex CLI
+    // catalog marks gpt-6-* `use_responses_lite: true`).
+    gpt_version(model).is_some_and(|v| v >= 5.6)
 }
 
 /// `gpt-5.6-luna` exists only behind the Responses Lite lane; the full
@@ -133,7 +152,7 @@ pub fn full_lane_web_search_model(model: &str) -> &str {
 }
 
 pub fn is_valid_model_for_codex(model: &str) -> bool {
-    if ALLOWED_MODELS.contains(&model) {
+    if ALLOWED_MODELS.contains(&model) || is_gpt_model(model) {
         return true;
     }
     let fast_set = fast_model_aliases();
@@ -146,6 +165,17 @@ pub fn is_valid_model_for_codex(model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn future_gpt_models_pass_and_use_lite() {
+        assert!(assert_allowed_model("gpt-6.1-sol").is_ok());
+        assert!(assert_allowed_model("gpt-7-astra").is_ok());
+        assert!(uses_responses_lite("gpt-6-astra"));
+        assert!(uses_responses_lite("gpt-6.1-sol"));
+        assert!(uses_responses_lite("gpt-5.6-luna"));
+        assert!(!uses_responses_lite("gpt-5.5"));
+        assert!(!uses_responses_lite("gpt-5.3-codex"));
+    }
 
     #[test]
     fn haiku_resolves_to_luna() {
@@ -212,6 +242,8 @@ mod tests {
 
     #[test]
     fn not_allowed_rejected() {
-        assert!(assert_allowed_model("gpt-7").is_err());
+        // Non-GPT ids stay rejected; gpt-* passes (see future_gpt_models_pass_and_use_lite).
+        assert!(assert_allowed_model("o3").is_err());
+        assert!(assert_allowed_model("claude-opus-5").is_err());
     }
 }

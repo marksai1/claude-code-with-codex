@@ -47,6 +47,10 @@ pub(crate) const CODEX_MODELS: &[&str] = &[
     "gpt-5.6-luna",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-luna",
 ];
 
 pub(crate) const KIMI_MODELS: &[&str] = &["kimi-for-coding", "kimi-k2.6", "kimi-k3", "k2.6", "k3"];
@@ -193,6 +197,11 @@ impl Registry {
             if models.iter().any(|candidate| candidate == &normalized) {
                 return self.handlers.get(name).cloned();
             }
+        }
+
+        // Any other gpt-* id goes to Codex, so new OpenAI models need no proxy update.
+        if normalized.starts_with("gpt-") {
+            return self.handlers.get("codex").cloned();
         }
 
         None
